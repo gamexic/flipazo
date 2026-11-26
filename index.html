@@ -172,7 +172,7 @@ button:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
   .lvl { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; display: flex; justify-content: space-between; align-items: center; padding: 5px 12px; }
   .lvl b { font-size: 17px; display: inline; }
   .brand { font-size: 22px; }
-  .overlay { justify-content: center; align-items: flex-end; background: linear-gradient(0deg, rgba(6, 9, 14, .96) 0%, rgba(6, 9, 14, .86) 75%, rgba(6, 9, 14, .5) 100%); }
+  .overlay { justify-content: center; align-items: flex-end; background: linear-gradient(0deg, rgba(6, 9, 14, .97) 0%, rgba(6, 9, 14, .9) 52%, rgba(6, 9, 14, 0) 70%); }
   .panel { margin: auto 0 0; }
   .logo { font-size: 56px; }
   .how { display: none; }
@@ -398,6 +398,24 @@ const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf1e9d8, roughness: 0.7
 /* ---------- Texturas de cartas ---------- */
 function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
 const TW = 512, TH = 716, TK = 1.5;
+/* Safari/iOS no dibuja emojis con fuentes grandes en canvas (se ven vacíos). Se dibujan a 160px en un lienzo
+   pequeño, se comprueba que haya píxeles y se escalan; si falla, se prueban tamaños menores. */
+const emojiCache = {};
+function emojiCanvas(ch) {
+  if (emojiCache[ch]) return emojiCache[ch];
+  for (const fs of [360, 240, 160, 120, 90, 64]) {
+    const dim = Math.ceil(fs * 1.5), t = document.createElement('canvas'); t.width = t.height = dim; const x = t.getContext('2d');
+    x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = `${fs}px ${FONT_E}`; x.fillText(ch, dim / 2, dim / 2 + fs * 0.03);
+    let ok = false;
+    try { const d = x.getImageData(Math.floor(dim * 0.25), Math.floor(dim * 0.25), Math.floor(dim * 0.5), Math.floor(dim * 0.5)).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 40) n++; ok = n > 40; } catch (e) { ok = true; }
+    if (ok) return (emojiCache[ch] = { cv: t, fs, dim });
+  }
+  return (emojiCache[ch] = null);
+}
+function drawEmoji(c, ch, cx, cy, size) {
+  const e = emojiCanvas(ch); if (!e) return;
+  const w = e.dim * size / e.fs; c.drawImage(e.cv, cx - w / 2, cy - w / 2, w, w);
+}
 function mkTex(cv) { const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; t.anisotropy = Math.min(16, maxAniso); return t; }
 function faceTexture(it) {
   const cv = document.createElement('canvas'); cv.width = TW * TK; cv.height = TH * TK; const c = cv.getContext('2d'); c.scale(TK, TK);
@@ -416,14 +434,14 @@ function faceTexture(it) {
   const rg = c.createRadialGradient(cx, cy, 20, cx, cy, 200); rg.addColorStop(0, 'rgba(255,255,255,.4)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
   c.fillStyle = rg; c.beginPath(); c.arc(cx, cy, 200, 0, 6.3); c.fill();
   c.textAlign = 'center'; c.textBaseline = 'middle';
-  c.font = `250px ${FONT_E}`; c.shadowColor = 'rgba(0,0,0,.38)'; c.shadowBlur = 26; c.shadowOffsetY = 16;
-  c.fillText(it.main, cx - 10, cy - 12);
+  c.shadowColor = 'rgba(0,0,0,.38)'; c.shadowBlur = 26; c.shadowOffsetY = 16;
+  drawEmoji(c, it.main, cx - 10, cy - 12, 250);
   c.shadowColor = 'transparent';
   const bx = ax + aw - 78, by = ay + ah - 84;
   c.fillStyle = '#fbf5e8'; c.shadowColor = 'rgba(0,0,0,.35)'; c.shadowBlur = 14; c.shadowOffsetY = 6;
   c.beginPath(); c.arc(bx, by, 62, 0, 6.3); c.fill(); c.shadowColor = 'transparent';
   c.lineWidth = 5; c.strokeStyle = `hsl(${it.hue},70%,38%)`; c.stroke();
-  c.font = `76px ${FONT_E}`; c.fillStyle = '#000'; c.fillText(it.badge, bx, by + 4);
+  drawEmoji(c, it.badge, bx, by + 4, 76);
   const gl = c.createLinearGradient(ax, ay, ax + aw, ay + ah * 0.6); gl.addColorStop(0, 'rgba(255,255,255,.14)'); gl.addColorStop(0.45, 'rgba(255,255,255,0)');
   c.fillStyle = gl; c.fillRect(ax, ay, aw, ah);
   c.restore();
@@ -519,10 +537,11 @@ function fitCamera() {
   const asp = w / h, el = (asp < 0.8 ? 68 : 60) * Math.PI / 180;
   const topPx = (w <= 640 ? 118 : 74) + 8, botPx = S.phase === 'play' || S.phase === 'memorize' || S.phase === 'hiding' || S.phase === 'dealing' ? 96 : 24;
   const leftPx = S.phase === 'menu' && w > 640 ? 500 : 0;
-  const f = projFit(S.board.w, S.board.d, el, topPx, botPx, leftPx);
+  const botPxM = S.phase === 'menu' && w <= 640 ? Math.round(h * 0.6) : botPx;
+  const f = projFit(S.board.w, S.board.d, el, topPx, botPxM, leftPx);
   camBase.set(0, Math.sin(el) * f.d, Math.cos(el) * f.d);
   camera.position.copy(camBase); camera.lookAt(0, 0, 0);
-  const cNdc = ((1 - 2 * topPx / h) + (-1 + 2 * botPx / h)) / 2, bNdc = (f.ymin + f.ymax) / 2;
+  const cNdc = ((1 - 2 * topPx / h) + (-1 + 2 * botPxM / h)) / 2, bNdc = (f.ymin + f.ymax) / 2;
   camera.setViewOffset(w, h, -(leftPx / w) * w / 2, (cNdc - bNdc) * h / 2, w, h);
 }
 
@@ -656,6 +675,7 @@ function dealBoard(pairs, opts = {}) {
     const dly = opts.preview ? 60 + i * 38 : 150 + i * 55;
     later(dly, () => { c.deal.t = 1; sfx.deal(); });
   });
+  boardGroup.visible = !(opts.preview && innerWidth <= 640);
   fitCamera();
   return deck.length * (opts.preview ? 38 : 55) + 900;
 }
