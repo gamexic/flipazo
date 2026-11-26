@@ -10,3 +10,7 @@ Juega: https://gamexic.github.io/flipazo/
 - Rachas, sonidos y chispas. Funciona en móvil y escritorio.
 
 Un solo archivo (`index.html`) con three.js desde cdnjs.
+
+## Créditos
+
+Los emojis son imágenes vectoriales de [Twemoji](https://github.com/twitter/twemoji) (CC-BY 4.0) incluidas en `index.html`, para que se vean igual en cualquier dispositivo.
